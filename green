@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+import argparse
+import requests
+import sys
+import yaml
+
+parser = argparse.ArgumentParser()
+parser.add_argument('repo')
+parser.add_argument('branch')
+args = parser.parse_args()
+
+with open('/etc/green.yml', 'r') as f:
+    config = yaml.safe_load(f)
+
+proxies = {}
+if 'proxy' in config:
+    proxies['https'] = config['proxy']
+
+# Accept experimental APIs
+headers = {'accept': 'application/vnd.github.antiope-preview+json'}
+
+resp = requests.get(
+        'https://api.github.com/repos/%s/commits/%s' % (args.repo, args.branch),
+        auth=(config['user'], config['token']),
+        headers=headers,
+        proxies=proxies)
+
+commit = resp.json()['sha']
+
+resp = requests.get(
+        'https://api.github.com/repos/%s/commits/%s/check-runs' % (args.repo, commit),
+        auth=(config['user'], config['token']),
+        headers=headers,
+        proxies=proxies)
+
+for c in resp.json()['check_runs']:
+    if c['status'] != 'completed':
+        print('Status is', c['status'], file=sys.stderr)
+        sys.exit(1)
+    if c['conclusion'] != 'success':
+        print('Conclusion is', c['conclusion'], file=sys.stderr)
+        sys.exit(1)
+
+print(commit)
